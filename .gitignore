@@ -1,0 +1,12 @@
+# auto added from template
+.cursor/
+.cursorignore
+# Node.js
+node_modules/
+
+# environment variables
+.env
+
+# build
+dist/
+
