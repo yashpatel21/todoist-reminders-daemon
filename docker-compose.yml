@@ -4,5 +4,5 @@ services:
     image: todoist-reminders-daemon:latest
     container_name: todoist-reminders-daemon
     restart: unless-stopped
-    env_file:
-      - .env
+    environment:
+      TODOIST_API_TOKEN: ""
