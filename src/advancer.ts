@@ -1,15 +1,29 @@
 import type { TodoistApi } from '@doist/todoist-sdk';
+import type { Task } from '@doist/todoist-sdk';
+import { DateTime } from 'luxon';
 
 /**
- * Move a recurring task to its next occurrence using the same behavior as official Todoist clients
- * when you complete/close a recurring task: `POST /api/v1/tasks/{id}/close`. Recurrence is preserved;
- * only the current instance rolls forward.
+ * Sets the recurring task's current instance to `target` while keeping the same
+ * recurrence phrase. Uses the REST update endpoint so the due matches our computed
+ * instant (closeTask would follow Todoist's own roll-forward rules, which can skip
+ * occurrences relative to wall clock).
  *
- * @see https://developer.todoist.com/api/v1/#tag/Tasks/operation/close_task_api_v1_tasks__task_id__close_post
+ * @see https://developer.todoist.com/api/v1/#tag/Tasks/operation/update_task_api_v1_tasks__task_id__post
  */
-export async function advanceToNextOccurrence(api: TodoistApi, taskId: string): Promise<void> {
-  const ok = await api.closeTask(taskId);
-  if (!ok) {
-    throw new Error(`closeTask did not succeed for task ${taskId}`);
+export async function advanceTaskDue(
+  api: TodoistApi,
+  taskId: string,
+  due: NonNullable<Task['due']>,
+  target: DateTime,
+): Promise<void> {
+  const dueDatetime = target.toUTC().toISO();
+  if (!dueDatetime) {
+    throw new Error(`Invalid target datetime for task ${taskId}`);
   }
+
+  await api.updateTask(taskId, {
+    dueDatetime,
+    dueString: due.string,
+    ...(due.lang != null && due.lang !== '' ? { dueLang: due.lang } : {}),
+  });
 }
