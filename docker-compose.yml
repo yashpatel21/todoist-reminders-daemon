@@ -1,12 +1,6 @@
 services:
   todoist-reminders-daemon:
-    platform: linux/amd64
-    build:
-      context: https://github.com/yashpatel21/todoist-reminders-daemon.git#main
-      dockerfile: Dockerfile
-      platforms:
-        - linux/amd64
-    image: yashpatel21/todoist-reminders-daemon:latest
+    image: yashpatel21/todoist-reminders-daemon:1.0.1
     container_name: todoist-reminders-daemon
     restart: unless-stopped
     environment:

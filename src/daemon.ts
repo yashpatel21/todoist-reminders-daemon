@@ -60,7 +60,14 @@ export function startDaemon(
 
 				const fresh = await api.getTask(task.id)
 				if (!isEligibleTask(fresh)) continue
-				if (!isSameDueSnapshot(fresh.due, due)) continue
+				if (!isSameDueSnapshot(fresh.due, due)) {
+					log.info('Skipping candidate advance because due changed during refresh', {
+						taskId: task.id,
+						listDue: due,
+						freshDue: fresh.due,
+					})
+					continue
+				}
 
 				const guardKey = `${task.id}:${dueFingerprint(due)}`
 				if (!guard.reserve(guardKey)) {

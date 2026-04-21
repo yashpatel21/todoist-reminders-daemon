@@ -36,5 +36,16 @@ export function dueFingerprint(due: NonNullable<Task['due']>): string {
 
 export function isSameDueSnapshot(a: Task['due'], b: Task['due']): boolean {
   if (!a || !b) return false;
-  return a.date === b.date && (a.datetime ?? '') === (b.datetime ?? '');
+  const aDatetime = a.datetime ?? '';
+  const bDatetime = b.datetime ?? '';
+  if (aDatetime || bDatetime) {
+    if (!aDatetime || !bDatetime) return false;
+    const aIso = DateTime.fromISO(aDatetime, { setZone: true });
+    const bIso = DateTime.fromISO(bDatetime, { setZone: true });
+    if (aIso.isValid && bIso.isValid) {
+      return aIso.toUTC().toMillis() === bIso.toUTC().toMillis();
+    }
+    return aDatetime === bDatetime;
+  }
+  return a.date === b.date;
 }
