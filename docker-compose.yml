@@ -1,7 +1,8 @@
 services:
   todoist-reminders-daemon:
-    image: yashpatel21/todoist-reminders-daemon:1.0.1
+    image: yashpatel21/todoist-reminders-daemon:1.0.5
     container_name: todoist-reminders-daemon
     restart: unless-stopped
     environment:
       TODOIST_API_TOKEN: ${TODOIST_API_TOKEN}
+      SCHEDULE_DIAG: "true"

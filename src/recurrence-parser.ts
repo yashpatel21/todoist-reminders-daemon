@@ -20,6 +20,15 @@ export function buildRRuleFromDueString(
   const trimmed = recurrenceString.trim();
   if (!trimmed) return null;
 
+  // Prefer keyword inference before rrule NLP. `fromText()`/`after()` with `tzid` and
+  // JS `Date` UTC instants can shift the computed next occurrence (often hours off in
+  // America/New_York). Our advance logic uses timezone-safe stepping for plain interval
+  // rules when RRULE modifiers are trivial.
+  if (preferKeywordInferenceOverFromText(trimmed)) {
+    const inferred = inferFrequencyFromKeywords(trimmed, dtstart, tzid);
+    if (inferred) return inferred;
+  }
+
   try {
     const parsed = RRuleCtor.fromText(trimmed);
     return new RRuleCtor({
@@ -45,6 +54,21 @@ export function buildRRuleFromDueString(
   return null;
 }
 
+/** Natural-language Todoist-ish phrases we map to FREQ + INTERVAL ourselves (avoid fromText tz bugs). */
+function preferKeywordInferenceOverFromText(s: string): boolean {
+  return (
+    /\bevery\s+minute\b|\bminutely\b/i.test(s) ||
+    /\bevery!?\s*\d+\s+hours?\b/i.test(s) ||
+    /\bevery\s+\d+\s+minutes?\b/i.test(s) ||
+    /\bevery\s+\d+\s+days?\b/i.test(s) ||
+    /\bevery\s+\d+\s+weeks?\b/i.test(s) ||
+    /\bevery\s+\d+\s+months?\b/i.test(s) ||
+    /\bevery\s+\d+\s+years?\b/i.test(s) ||
+    /\bevery\s+hour\b|\bhourly\b/i.test(s) ||
+    /\b(daily|every\s+day|weekly|every\s+week|monthly|every\s+month|yearly|annually|every\s+year)\b/i.test(s)
+  );
+}
+
 function inferFrequencyFromKeywords(
   text: string,
   dtstart: Date,
@@ -54,19 +78,56 @@ function inferFrequencyFromKeywords(
   let freq: Frequency | null = null;
   let interval = 1;
 
-  const hourMatch = s.match(/\bevery\s+(\d+)\s+hours?\b/i);
-  if (hourMatch) {
+  const minuteMatch = s.match(/\bevery\s+(\d+)\s+minutes?\b/i);
+  if (minuteMatch) {
+    freq = FrequencyEnum.MINUTELY;
+    interval = Number.parseInt(minuteMatch[1] ?? '1', 10) || 1;
+  } else if (/\bevery\s+minute\b|\bminutely\b/i.test(s)) {
+    freq = FrequencyEnum.MINUTELY;
+    interval = 1;
+  }
+
+  const hourMatch = s.match(/\bevery!?\s*(\d+)\s+hours?\b/i);
+  if (!freq && hourMatch) {
     freq = FrequencyEnum.HOURLY;
     interval = Number.parseInt(hourMatch[1] ?? '1', 10) || 1;
-  } else if (/\bevery\s+hour\b|\bhourly\b/i.test(s)) {
+  } else if (!freq && /\bevery\s+hour\b|\bhourly\b/i.test(s)) {
     freq = FrequencyEnum.HOURLY;
-  } else if (/\b(daily|every\s+day)\b/i.test(s)) {
+  } else if (!freq) {
+    const dayMatch = s.match(/\bevery\s+(\d+)\s+days?\b/i);
+    if (dayMatch) {
+      freq = FrequencyEnum.DAILY;
+      interval = Number.parseInt(dayMatch[1] ?? '1', 10) || 1;
+    }
+  }
+  if (!freq) {
+    const weekMatch = s.match(/\bevery\s+(\d+)\s+weeks?\b/i);
+    if (weekMatch) {
+      freq = FrequencyEnum.WEEKLY;
+      interval = Number.parseInt(weekMatch[1] ?? '1', 10) || 1;
+    }
+  }
+  if (!freq) {
+    const monthMatch = s.match(/\bevery\s+(\d+)\s+months?\b/i);
+    if (monthMatch) {
+      freq = FrequencyEnum.MONTHLY;
+      interval = Number.parseInt(monthMatch[1] ?? '1', 10) || 1;
+    }
+  }
+  if (!freq) {
+    const yearMatch = s.match(/\bevery\s+(\d+)\s+years?\b/i);
+    if (yearMatch) {
+      freq = FrequencyEnum.YEARLY;
+      interval = Number.parseInt(yearMatch[1] ?? '1', 10) || 1;
+    }
+  }
+  if (!freq && /\b(daily|every\s+day)\b/i.test(s)) {
     freq = FrequencyEnum.DAILY;
-  } else if (/\b(weekly|every\s+week)\b/i.test(s)) {
+  } else if (!freq && /\b(weekly|every\s+week)\b/i.test(s)) {
     freq = FrequencyEnum.WEEKLY;
-  } else if (/\b(monthly|every\s+month)\b/i.test(s)) {
+  } else if (!freq && /\b(monthly|every\s+month)\b/i.test(s)) {
     freq = FrequencyEnum.MONTHLY;
-  } else if (/\b(yearly|annually|every\s+year)\b/i.test(s)) {
+  } else if (!freq && /\b(yearly|annually|every\s+year)\b/i.test(s)) {
     freq = FrequencyEnum.YEARLY;
   }
 

@@ -1,6 +1,6 @@
 import type { TodoistApi } from '@doist/todoist-sdk'
 import { DateTime } from 'luxon'
-import { resolveAdvanceTarget } from './advance-target.js'
+import { analyzeAdvanceDecision } from './advance-target.js'
 import { advanceTaskDue } from './advancer.js'
 import type { AppConfig } from './config.js'
 import { dueFingerprint, isSameDueSnapshot, parseCurrentOccurrence } from './due-datetime.js'
@@ -16,6 +16,8 @@ export function startDaemon(
 	userDefaultZone: string,
 	log: Logger,
 ): { stop: () => void } {
+	const scheduleDiag =
+		process.env.SCHEDULE_DIAG === '1' || process.env.SCHEDULE_DIAG?.toLowerCase() === 'true'
 	const fallbackZone = cfg.DEFAULT_TIMEZONE ?? userDefaultZone
 	const guard = new StateGuard(cfg.STATE_GUARD_TTL_MS)
 	let runningTick = false
@@ -51,11 +53,42 @@ export function startDaemon(
 
 				const rule = buildRRuleFromDueString(due.string, current)
 				if (!rule) {
-					log.debug('Could not build recurrence rule; skipping', task.id, due.string)
+					log.warn('Could not build recurrence rule; skipping overdue recurring task', {
+						taskId: task.id,
+						content: task.content,
+						dueString: due.string,
+					})
 					continue
 				}
 
-				const target = resolveAdvanceTarget(current, now, rule, cfg.ADVANCE_WINDOW_MS)
+				const analysis = analyzeAdvanceDecision(current, now, rule, cfg.ADVANCE_WINDOW_MS)
+				if (scheduleDiag && current < now) {
+					log.info('Recurring occurrence check', {
+						taskId: task.id,
+						content: task.content,
+						decision: analysis.kind,
+						current: current.toISO(),
+						now: now.toISO(),
+						containerUnixMs: Date.now(),
+						...(analysis.kind === 'before_grace_window'
+							? {
+									nextOccurrence: analysis.next.toISO(),
+									windowOpens: analysis.graceStart.toISO(),
+									advanceWindowMs: cfg.ADVANCE_WINDOW_MS,
+								}
+							: {}),
+					})
+				}
+				if (analysis.kind === 'stuck_duplicate_next') {
+					log.warn('Recurrence advance stuck (duplicate rule.next)', {
+						taskId: task.id,
+						content: task.content,
+						dueString: due.string,
+					})
+					continue
+				}
+
+				const target = analysis.kind === 'advance' ? analysis.target : null
 				if (!target) continue
 
 				const fresh = await api.getTask(task.id)
