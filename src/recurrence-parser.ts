@@ -6,9 +6,26 @@ const RRuleCtor = rrule.RRule;
 const rrulestr = rrule.rrulestr;
 const FrequencyEnum = rrule.Frequency;
 
+const SUPPORTED_RECURRENCE_FREQ = new Set<Frequency>([
+  FrequencyEnum.HOURLY,
+  FrequencyEnum.DAILY,
+  FrequencyEnum.WEEKLY,
+  FrequencyEnum.MONTHLY,
+  FrequencyEnum.YEARLY,
+])
+
+function recurrenceFreqSupported(freq: Frequency): boolean {
+  return SUPPORTED_RECURRENCE_FREQ.has(freq)
+}
+
+function acceptParsedRule(rule: RRule): RRule | null {
+  return recurrenceFreqSupported(rule.options.freq) ? rule : null
+}
+
 /**
  * Build an RRule anchored at Todoist's current occurrence, using the recurrence phrase from `due.string`.
- * Falls back to keyword inference when NLP parsing fails — Todoist NL is not guaranteed to map 1:1.
+ * Only **hourly, daily, weekly, monthly, and yearly** (incl. “every N …”) are supported; other frequencies
+ * return null. Falls back to keyword inference when NLP parsing fails — Todoist NL is not guaranteed to map 1:1.
  */
 export function buildRRuleFromDueString(
   recurrenceString: string,
@@ -26,26 +43,29 @@ export function buildRRuleFromDueString(
   // rules when RRULE modifiers are trivial.
   if (preferKeywordInferenceOverFromText(trimmed)) {
     const inferred = inferFrequencyFromKeywords(trimmed, dtstart, tzid);
-    if (inferred) return inferred;
+    if (inferred) return acceptParsedRule(inferred);
   }
 
   try {
     const parsed = RRuleCtor.fromText(trimmed);
-    return new RRuleCtor({
+    const rule = new RRuleCtor({
       ...parsed.origOptions,
       dtstart,
       tzid,
     });
+    const ok = acceptParsedRule(rule);
+    if (ok) return ok;
   } catch {
     // continue to fallbacks
   }
 
   const inferred = inferFrequencyFromKeywords(trimmed, dtstart, tzid);
-  if (inferred) return inferred;
+  if (inferred) return acceptParsedRule(inferred);
 
   try {
     if (/^RRULE:/i.test(trimmed) || trimmed.includes('\nRRULE:')) {
-      return rrulestr(trimmed, { dtstart, tzid: tzid ?? undefined });
+      const rule = rrulestr(trimmed, { dtstart, tzid: tzid ?? undefined });
+      return acceptParsedRule(rule);
     }
   } catch {
     return null;
@@ -57,9 +77,7 @@ export function buildRRuleFromDueString(
 /** Natural-language Todoist-ish phrases we map to FREQ + INTERVAL ourselves (avoid fromText tz bugs). */
 function preferKeywordInferenceOverFromText(s: string): boolean {
   return (
-    /\bevery\s+minute\b|\bminutely\b/i.test(s) ||
     /\bevery!?\s*\d+\s+hours?\b/i.test(s) ||
-    /\bevery\s+\d+\s+minutes?\b/i.test(s) ||
     /\bevery\s+\d+\s+days?\b/i.test(s) ||
     /\bevery\s+\d+\s+weeks?\b/i.test(s) ||
     /\bevery\s+\d+\s+months?\b/i.test(s) ||
@@ -78,22 +96,13 @@ function inferFrequencyFromKeywords(
   let freq: Frequency | null = null;
   let interval = 1;
 
-  const minuteMatch = s.match(/\bevery\s+(\d+)\s+minutes?\b/i);
-  if (minuteMatch) {
-    freq = FrequencyEnum.MINUTELY;
-    interval = Number.parseInt(minuteMatch[1] ?? '1', 10) || 1;
-  } else if (/\bevery\s+minute\b|\bminutely\b/i.test(s)) {
-    freq = FrequencyEnum.MINUTELY;
-    interval = 1;
-  }
-
   const hourMatch = s.match(/\bevery!?\s*(\d+)\s+hours?\b/i);
-  if (!freq && hourMatch) {
+  if (hourMatch) {
     freq = FrequencyEnum.HOURLY;
     interval = Number.parseInt(hourMatch[1] ?? '1', 10) || 1;
-  } else if (!freq && /\bevery\s+hour\b|\bhourly\b/i.test(s)) {
+  } else if (/\bevery\s+hour\b|\bhourly\b/i.test(s)) {
     freq = FrequencyEnum.HOURLY;
-  } else if (!freq) {
+  } else {
     const dayMatch = s.match(/\bevery\s+(\d+)\s+days?\b/i);
     if (dayMatch) {
       freq = FrequencyEnum.DAILY;

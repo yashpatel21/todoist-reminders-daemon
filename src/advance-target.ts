@@ -33,7 +33,7 @@ function rruleUsesByModifiers(rule: RRule): boolean {
 }
 
 /**
- * Todoist-style “every N {minutes,hours,days,...}”: Luxon stepping for plain intervals.
+ * Todoist-style “every N {hours,days,...}”: Luxon stepping for plain intervals.
  * Real constraints (BYDAY, two BYHOURs, nth weekday patterns, …) use `rule.after()`.
  */
 function isPlainIntervalRule(rule: RRule): boolean {
@@ -48,10 +48,6 @@ function luxonStepPlainInterval(rule: RRule, anchor: DateTime): DateTime | null 
 	const every = interval && interval >= 1 ? interval : 1
 
 	switch (freq) {
-		case Frequency.SECONDLY:
-			return anchor.plus({ seconds: every })
-		case Frequency.MINUTELY:
-			return anchor.plus({ minutes: every })
 		case Frequency.HOURLY:
 			return anchor.plus({ hours: every })
 		case Frequency.DAILY:
@@ -82,6 +78,11 @@ function occurrenceAfterAnchored(rule: RRule, anchor: DateTime): DateTime | null
 	return DateTime.fromJSDate(tJs, { zone: anchor.zone })
 }
 
+/** Hourly (every N hours) advances as soon as the current slot is overdue; other freqs use the grace window. */
+function usesGraceWindowBeforeNext(rule: RRule): boolean {
+	return rule.options.freq !== Frequency.HOURLY
+}
+
 export type AdvanceAnalysis =
 	| { kind: 'not_overdue' }
 	| { kind: 'no_next_occurrence' }
@@ -107,7 +108,7 @@ export function analyzeAdvanceDecision(
 	for (let step = 0; step < MAX_STEPS; step++) {
 		const graceStart = t.minus({ milliseconds: advanceWindowMs })
 
-		if (now < graceStart) {
+		if (usesGraceWindowBeforeNext(rule) && now < graceStart) {
 			return { kind: 'before_grace_window', next: t, graceStart }
 		}
 
@@ -131,10 +132,11 @@ export function analyzeAdvanceDecision(
  * Given a stored occurrence `current` (still shown on the task) and `now`, find the
  * recurrence instant `target` we should roll the task to.
  *
- * Walks forward along the series: if `now` is before the grace window for the next
- * occurrence, returns null. If `now` is inside [target - window, target), returns that
- * `target`. If `now` is at or after `target`, skips ahead until an occurrence matches
- * (so long-overdue hourly/daily tasks catch up to the slot anchored on `now`).
+ * Walks forward along the series. For non-hourly rules, if `now` is before the grace
+ * window for the next occurrence, returns null; if inside [target − window, target),
+ * advances to `target`. For **hourly** (every N hours), advances as soon as the task is
+ * overdue—no grace wait. If `now` is at or after `target`, skips forward until
+ * `now < target` (catch-up for long-overdue tasks).
  */
 export function resolveAdvanceTarget(
 	current: DateTime,

@@ -1,6 +1,6 @@
 {
 	"name": "todoist-reminders-daemon",
-	"version": "1.0.5",
+	"version": "1.0.7",
 	"description": "Background daemon that advances stale recurring timed Todoist tasks before the next occurrence.",
 	"main": "dist/index.js",
 	"scripts": {

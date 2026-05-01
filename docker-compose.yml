@@ -1,6 +1,6 @@
 services:
   todoist-reminders-daemon:
-    image: yashpatel21/todoist-reminders-daemon:1.0.5
+    image: yashpatel21/todoist-reminders-daemon:latest
     container_name: todoist-reminders-daemon
     restart: unless-stopped
     environment:

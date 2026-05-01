@@ -58,21 +58,23 @@ describe('resolveAdvanceTarget', () => {
 		expect(target!.setZone(zone).toFormat('yyyy-LL-dd HH:mm')).toBe('2026-04-25 15:30')
 	})
 
-	it('hourly EDT next step is wall +1 hour (fixes rrule.after + tz shifting +4h)', () => {
+	it('hourly advances as soon as overdue (no grace wait); wall +1 hour for next slot', () => {
 		const current = DateTime.fromISO('2026-04-30T17:47:00.000-04:00')
 		const rule = buildRRuleFromDueString('every hour', current)
 		expect(rule).not.toBeNull()
 
-		const beforeGrace = DateTime.fromISO('2026-04-30T17:52:00.000-04:00')
-		const gated = analyzeAdvanceDecision(current, beforeGrace, rule!, windowMs)
-		expect(gated.kind).toBe('before_grace_window')
-		if (gated.kind === 'before_grace_window') {
-			expect(gated.next.toISO()).toBe('2026-04-30T18:47:00.000-04:00')
-			expect(gated.graceStart.toISO()).toBe('2026-04-30T18:42:00.000-04:00')
+		const midHour = DateTime.fromISO('2026-04-30T17:52:00.000-04:00')
+		const midDecision = analyzeAdvanceDecision(current, midHour, rule!, windowMs)
+		expect(midDecision.kind).toBe('advance')
+		if (midDecision.kind === 'advance') {
+			expect(midDecision.target.toISO()).toBe('2026-04-30T18:47:00.000-04:00')
 		}
+		expect(resolveAdvanceTarget(current, midHour, rule!, windowMs)?.toISO()).toBe(
+			'2026-04-30T18:47:00.000-04:00',
+		)
 
-		const inWindow = DateTime.fromISO('2026-04-30T18:43:30.000-04:00')
-		expect(resolveAdvanceTarget(current, inWindow, rule!, windowMs)?.toISO()).toBe(
+		const nearNext = DateTime.fromISO('2026-04-30T18:43:30.000-04:00')
+		expect(resolveAdvanceTarget(current, nearNext, rule!, windowMs)?.toISO()).toBe(
 			'2026-04-30T18:47:00.000-04:00',
 		)
 	})
@@ -119,19 +121,19 @@ describe('resolveAdvanceTarget', () => {
 			byminute: [21],
 		})
 
-		const beforeGrace = analyzeAdvanceDecision(
+		const midHour = analyzeAdvanceDecision(
 			current,
 			DateTime.fromISO('2026-04-30T18:10:00.000-04:00'),
 			rule,
 			windowMs,
 		)
-		expect(beforeGrace.kind).toBe('before_grace_window')
-		if (beforeGrace.kind === 'before_grace_window') {
-			expect(beforeGrace.next.toISO()).toBe('2026-04-30T18:21:00.000-04:00')
+		expect(midHour.kind).toBe('advance')
+		if (midHour.kind === 'advance') {
+			expect(midHour.target.toISO()).toBe('2026-04-30T18:21:00.000-04:00')
 		}
 
-		const inWindow = DateTime.fromISO('2026-04-30T18:17:30.000-04:00')
-		expect(resolveAdvanceTarget(current, inWindow, rule, windowMs)?.toISO()).toBe(
+		const nearNext = DateTime.fromISO('2026-04-30T18:17:30.000-04:00')
+		expect(resolveAdvanceTarget(current, nearNext, rule, windowMs)?.toISO()).toBe(
 			'2026-04-30T18:21:00.000-04:00',
 		)
 	})

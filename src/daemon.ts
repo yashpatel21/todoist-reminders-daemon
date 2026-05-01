@@ -3,11 +3,10 @@ import { DateTime } from 'luxon'
 import { analyzeAdvanceDecision } from './advance-target.js'
 import { advanceTaskDue } from './advancer.js'
 import type { AppConfig } from './config.js'
-import { dueFingerprint, isSameDueSnapshot, parseCurrentOccurrence } from './due-datetime.js'
+import { isSameDueSnapshot, parseCurrentOccurrence } from './due-datetime.js'
 import { isEligibleTask } from './eligibility.js'
 import type { Logger } from './logger.js'
 import { buildRRuleFromDueString } from './recurrence-parser.js'
-import { StateGuard } from './state-guard.js'
 import { fetchAllActiveTasks } from './todoist-tasks.js'
 
 export function startDaemon(
@@ -19,7 +18,6 @@ export function startDaemon(
 	const scheduleDiag =
 		process.env.SCHEDULE_DIAG === '1' || process.env.SCHEDULE_DIAG?.toLowerCase() === 'true'
 	const fallbackZone = cfg.DEFAULT_TIMEZONE ?? userDefaultZone
-	const guard = new StateGuard(cfg.STATE_GUARD_TTL_MS)
 	let runningTick = false
 	let stopped = false
 
@@ -102,12 +100,6 @@ export function startDaemon(
 					continue
 				}
 
-				const guardKey = `${task.id}:${dueFingerprint(due)}`
-				if (!guard.reserve(guardKey)) {
-					log.debug('Duplicate advance suppressed', guardKey)
-					continue
-				}
-
 				try {
 					log.info('Advancing recurring task', {
 						taskId: task.id,
@@ -117,7 +109,6 @@ export function startDaemon(
 					})
 					await advanceTaskDue(api, task.id, due, target)
 				} catch (err) {
-					guard.release(guardKey)
 					log.error('Failed to advance task', task.id, err)
 				}
 			}
