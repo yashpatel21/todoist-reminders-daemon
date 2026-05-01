@@ -83,6 +83,43 @@ function usesGraceWindowBeforeNext(rule: RRule): boolean {
 	return rule.options.freq !== Frequency.HOURLY
 }
 
+export type AdvanceDecisionOptions = {
+	/** Calendar-day recurrence (Todoist due date without time): advance at midnight of the next date. */
+	allDay?: boolean
+}
+
+/** Date-only recurring tasks: hourly does not apply. */
+function analyzeAdvanceDecisionAllDay(
+	current: DateTime,
+	now: DateTime,
+	rule: RRule,
+): AdvanceAnalysis {
+	if (rule.options.freq === Frequency.HOURLY) {
+		return { kind: 'not_overdue' }
+	}
+
+	const c = current.startOf('day')
+	const next0 = occurrenceAfterAnchored(rule, c)
+	if (!next0) return { kind: 'no_next_occurrence' }
+	let t = next0.startOf('day')
+
+	if (now < t) return { kind: 'not_overdue' }
+
+	for (let step = 0; step < MAX_STEPS; step++) {
+		if (now.startOf('day').toMillis() <= t.startOf('day').toMillis()) {
+			return { kind: 'advance', target: t }
+		}
+
+		const stepNext = occurrenceAfterAnchored(rule, t)
+		if (!stepNext) return { kind: 'no_next_occurrence' }
+		const nextT = stepNext.startOf('day')
+		if (nextT.toMillis() === t.toMillis()) return { kind: 'stuck_duplicate_next' }
+		t = nextT
+	}
+
+	return { kind: 'no_next_occurrence' }
+}
+
 export type AdvanceAnalysis =
 	| { kind: 'not_overdue' }
 	| { kind: 'no_next_occurrence' }
@@ -99,7 +136,12 @@ export function analyzeAdvanceDecision(
 	now: DateTime,
 	rule: RRule,
 	advanceWindowMs: number,
+	opts?: AdvanceDecisionOptions,
 ): AdvanceAnalysis {
+	if (opts?.allDay) {
+		return analyzeAdvanceDecisionAllDay(current, now.setZone(current.zone), rule)
+	}
+
 	if (!(current < now)) return { kind: 'not_overdue' }
 
 	let t = occurrenceAfterAnchored(rule, current)
@@ -132,18 +174,17 @@ export function analyzeAdvanceDecision(
  * Given a stored occurrence `current` (still shown on the task) and `now`, find the
  * recurrence instant `target` we should roll the task to.
  *
- * Walks forward along the series. For non-hourly rules, if `now` is before the grace
- * window for the next occurrence, returns null; if inside [target − window, target),
- * advances to `target`. For **hourly** (every N hours), advances as soon as the task is
- * overdue—no grace wait. If `now` is at or after `target`, skips forward until
- * `now < target` (catch-up for long-overdue tasks).
+ * Walks forward along the series. For timed tasks: non-hourly use the grace window; hourly
+ * advances as soon as overdue. For **`allDay`**, compares calendar days only (advance once
+ * `now` is at or past midnight of the next occurrence, with catch-up for far-overdue dates).
  */
 export function resolveAdvanceTarget(
 	current: DateTime,
 	now: DateTime,
 	rule: RRule,
 	advanceWindowMs: number,
+	opts?: AdvanceDecisionOptions,
 ): DateTime | null {
-	const a = analyzeAdvanceDecision(current, now, rule, advanceWindowMs)
+	const a = analyzeAdvanceDecision(current, now, rule, advanceWindowMs, opts)
 	return a.kind === 'advance' ? a.target : null
 }

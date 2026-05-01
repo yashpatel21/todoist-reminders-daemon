@@ -48,11 +48,25 @@ describe('isEligibleTask', () => {
     expect(isEligibleTask(task)).toBe(true);
   });
 
-  it('rejects date-only recurring tasks', () => {
+  it('accepts date-only recurring tasks for daily+ coarser cadence', () => {
     const task = baseTask({
       due: {
         isRecurring: true,
         string: 'every day',
+        date: '2026-04-18',
+        datetime: null,
+        timezone: null,
+        lang: 'en',
+      },
+    });
+    expect(isEligibleTask(task)).toBe(true);
+  });
+
+  it('rejects date-only tasks that look hourly', () => {
+    const task = baseTask({
+      due: {
+        isRecurring: true,
+        string: 'every hour',
         date: '2026-04-18',
         datetime: null,
         timezone: null,

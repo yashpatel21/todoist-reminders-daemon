@@ -166,3 +166,66 @@ describe('resolveAdvanceTarget', () => {
 		)
 	})
 })
+
+describe('all-day recurrence (AdvanceDecisionOptions.allDay)', () => {
+	const zone = 'America/New_York'
+	const windowMs = 300_000
+	const opts = { allDay: true as const }
+
+	it('daily: still due today → not_overdue until next calendar day begins', () => {
+		const current = DateTime.fromObject({ year: 2026, month: 5, day: 1 }, { zone }).startOf('day')
+		const rule = buildRRuleFromDueString('every day', current)
+		expect(rule).not.toBeNull()
+
+		const may1_evening = DateTime.fromObject(
+			{ year: 2026, month: 5, day: 1, hour: 23, minute: 59 },
+			{ zone },
+		)
+		expect(analyzeAdvanceDecision(current, may1_evening, rule!, windowMs, opts).kind).toBe(
+			'not_overdue',
+		)
+
+		const may2_just_after_midnight = DateTime.fromObject(
+			{ year: 2026, month: 5, day: 2, hour: 0, minute: 1 },
+			{ zone },
+		)
+		const a = analyzeAdvanceDecision(current, may2_just_after_midnight, rule!, windowMs, opts)
+		expect(a.kind).toBe('advance')
+		if (a.kind === 'advance') expect(a.target.toFormat('yyyy-LL-dd')).toBe('2026-05-02')
+	})
+
+	it('daily: catch-up to today’s calendar day when far overdue', () => {
+		const current = DateTime.fromObject({ year: 2026, month: 5, day: 1 }, { zone }).startOf('day')
+		const rule = buildRRuleFromDueString('every day', current)
+		expect(rule).not.toBeNull()
+		const now = DateTime.fromObject(
+			{ year: 2026, month: 5, day: 10, hour: 14, minute: 0 },
+			{ zone },
+		)
+		const target = resolveAdvanceTarget(current, now, rule!, windowMs, opts)
+		expect(target?.toFormat('yyyy-LL-dd')).toBe('2026-05-10')
+	})
+
+	it('weekly: waits until anchor weekday on next week', () => {
+		const current = DateTime.fromObject({ year: 2026, month: 1, day: 1 }, { zone }).startOf('day')
+		const rule = buildRRuleFromDueString('every week', current)
+		expect(rule).not.toBeNull()
+		const jan7 = DateTime.fromObject({ year: 2026, month: 1, day: 7, hour: 12 }, { zone })
+		expect(analyzeAdvanceDecision(current, jan7, rule!, windowMs, opts).kind).toBe('not_overdue')
+
+		const jan8 = DateTime.fromObject({ year: 2026, month: 1, day: 8, hour: 9 }, { zone })
+		const a = analyzeAdvanceDecision(current, jan8, rule!, windowMs, opts)
+		expect(a.kind).toBe('advance')
+		if (a.kind === 'advance') expect(a.target.toFormat('yyyy-LL-dd')).toBe('2026-01-08')
+	})
+
+	it('hourly recurrence with allDay flag is ignored (no advance)', () => {
+		const current = DateTime.fromObject({ year: 2026, month: 5, day: 1, hour: 17 }, { zone })
+		const rule = buildRRuleFromDueString('every hour', current)
+		expect(rule).not.toBeNull()
+		expect(rule!.options.freq).toBe(rrule.Frequency.HOURLY)
+		expect(analyzeAdvanceDecision(current, current.plus({ hours: 2 }), rule!, windowMs, opts).kind).toBe(
+			'not_overdue',
+		)
+	})
+})

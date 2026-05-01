@@ -10,12 +10,32 @@ import { DateTime } from 'luxon';
  *
  * @see https://developer.todoist.com/api/v1/#tag/Tasks/operation/update_task_api_v1_tasks__task_id__post
  */
+export type AdvanceTaskDueOptions = {
+  /** Persist as Todoist due_date (calendar day), not due_datetime */
+  allDay?: boolean;
+};
+
 export async function advanceTaskDue(
   api: TodoistApi,
   taskId: string,
   due: NonNullable<Task['due']>,
   target: DateTime,
+  opts?: AdvanceTaskDueOptions,
 ): Promise<void> {
+  const targetWall = due.timezone != null && due.timezone !== ''
+    ? target.setZone(due.timezone)
+    : target
+
+  if (opts?.allDay) {
+    const dueDate = targetWall.startOf('day').toFormat('yyyy-LL-dd');
+    await api.updateTask(taskId, {
+      dueDate,
+      dueString: due.string,
+      ...(due.lang != null && due.lang !== '' ? { dueLang: due.lang } : {}),
+    });
+    return;
+  }
+
   const dueDatetime = target.toUTC().toISO();
   if (!dueDatetime) {
     throw new Error(`Invalid target datetime for task ${taskId}`);

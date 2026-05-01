@@ -3,7 +3,7 @@ import { DateTime } from 'luxon'
 import { analyzeAdvanceDecision } from './advance-target.js'
 import { advanceTaskDue } from './advancer.js'
 import type { AppConfig } from './config.js'
-import { isSameDueSnapshot, parseCurrentOccurrence } from './due-datetime.js'
+import { dueHasTime, isSameDueSnapshot, parseCurrentOccurrence } from './due-datetime.js'
 import { isEligibleTask } from './eligibility.js'
 import type { Logger } from './logger.js'
 import { buildRRuleFromDueString } from './recurrence-parser.js'
@@ -46,8 +46,9 @@ export function startDaemon(
 					continue
 				}
 
+				const allDayRecurring = !dueHasTime(due)
 				const now = DateTime.now().setZone(current.zone)
-				if (current >= now) continue
+				if (!allDayRecurring && current >= now) continue
 
 				const rule = buildRRuleFromDueString(due.string, current)
 				if (!rule) {
@@ -59,11 +60,14 @@ export function startDaemon(
 					continue
 				}
 
-				const analysis = analyzeAdvanceDecision(current, now, rule, cfg.ADVANCE_WINDOW_MS)
-				if (scheduleDiag && current < now) {
+				const analysis = analyzeAdvanceDecision(current, now, rule, cfg.ADVANCE_WINDOW_MS, {
+					allDay: allDayRecurring,
+				})
+				if (scheduleDiag && (allDayRecurring || current < now)) {
 					log.info('Recurring occurrence check', {
 						taskId: task.id,
 						content: task.content,
+						allDay: allDayRecurring,
 						decision: analysis.kind,
 						current: current.toISO(),
 						now: now.toISO(),
@@ -107,7 +111,7 @@ export function startDaemon(
 						from: current.toISO(),
 						to: target.toISO(),
 					})
-					await advanceTaskDue(api, task.id, due, target)
+					await advanceTaskDue(api, task.id, due, target, { allDay: allDayRecurring })
 				} catch (err) {
 					log.error('Failed to advance task', task.id, err)
 				}

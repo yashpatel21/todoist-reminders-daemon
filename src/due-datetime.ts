@@ -12,22 +12,30 @@ export function dueHasTime(due: NonNullable<Task['due']>): boolean {
 }
 
 /**
- * Current occurrence wall time: prefer `datetime`, else parse `date`, in task or fallback zone.
+ * Current occurrence: timed tasks use instant from `datetime` / dated time; date-only dues
+ * normalize to **start of that calendar day** in the due / fallback zone.
  */
 export function parseCurrentOccurrence(
   due: NonNullable<Task['due']>,
   fallbackZone: string,
 ): DateTime | null {
   const zone = due.timezone ?? fallbackZone;
-  if (due.datetime) {
-    const dt = DateTime.fromISO(due.datetime, { setZone: true });
-    if (dt.isValid) return dt.setZone(zone);
+  if (dueHasTime(due)) {
+    if (due.datetime) {
+      const dt = DateTime.fromISO(due.datetime, { setZone: true });
+      if (dt.isValid) return dt.setZone(zone);
+    }
+    let dt = DateTime.fromISO(due.date, { zone });
+    if (!dt.isValid) {
+      dt = DateTime.fromSQL(due.date, { zone });
+    }
+    return dt.isValid ? dt : null;
   }
   let dt = DateTime.fromISO(due.date, { zone });
   if (!dt.isValid) {
     dt = DateTime.fromSQL(due.date, { zone });
   }
-  return dt.isValid ? dt : null;
+  return dt.isValid ? dt.startOf('day') : null;
 }
 
 export function dueFingerprint(due: NonNullable<Task['due']>): string {
